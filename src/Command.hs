@@ -86,19 +86,22 @@ startTask fp std = do
         MT.lift $ errYellow ("Task " ++ fp ++ " is already running.")
     else do
         config <- MT.lift $ locateConfigFile std
+        compressVideoBin <- MT.lift $ getEnv "bin_compress_video"
         let ext = takeExtensions fp
         let outUrl = replaceExtensions fp (show std ++ ext)
+        let args = unwords [compressVideoBin, fp, outUrl, config]
         (Just pstdin, Just pstdout, Just pstderr, hl) <- MT.lift $
-            P.createProcess (P.shell $ unwords ["compress-video.exe", fp, outUrl, config]) {
-                P.std_in  = P.CreatePipe
+            P.createProcess (P.shell args) {
+                  P.std_in  = P.CreatePipe
                 , P.std_out = P.CreatePipe
                 , P.std_err = P.CreatePipe
-                }
+            }
         let newProgess = Progress {
             json = ProgressJSON {
-                url = fp
+                  url = fp
                 , percentage = 0
                 , status = InQueue
+                , errors = ""
             }
             , stdin  = pstdin
             , stdout = pstdout
@@ -106,11 +109,11 @@ startTask fp std = do
             , handle = hl
         }
         put (insert fp newProgess st)
-        MT.lift $ errYellow ("Started task: " ++ fp)
+        MT.lift $ errYellow ("Started task: " ++ args)
         return ()
 
 locateConfigFile :: Standard -> IO FilePath
-locateConfigFile std = getEnv ("Cfg_" ++ show std)
+locateConfigFile std = getEnv ("cfg_" ++ show std)
 
 parseCommands :: B.ByteString -> Commands
 parseCommands contents = [ convertToCmd (B.unpack l) $ eitherDecode l | l <- B.split '\n' contents ]

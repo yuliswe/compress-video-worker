@@ -6,9 +6,13 @@ import qualified Control.Monad.Trans.Class  as MT
 import Control.Concurrent
 import Control.Monad
 import Data.HashMap.Lazy as HM
+import System.IO as IO
 
 mainLoop :: IO ()
-mainLoop = evalStateT loop HM.empty
+mainLoop = do
+    IO.hSetBuffering IO.stdout IO.LineBuffering
+    IO.hSetBuffering IO.stderr IO.LineBuffering
+    evalStateT loop HM.empty
 
 loop :: StateT Progresses IO ()
 loop = forever $ do
