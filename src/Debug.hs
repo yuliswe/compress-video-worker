@@ -3,14 +3,17 @@ module Debug where
 import           System.Console.ANSI
 import qualified System.IO as IO
 
-errYellow :: String -> IO ()
-errYellow str = do
+errorYellow :: String -> IO ()
+errorYellow str = do
     hSetSGR IO.stderr [SetColor Foreground Vivid Yellow]
     IO.hPutStrLn IO.stderr str
     hSetSGR IO.stderr [Reset]
 
-errRed :: String -> IO ()
-errRed str = do
+errorRed :: String -> IO ()
+errorRed str = do
     hSetSGR IO.stderr [SetColor Foreground Vivid Red]
     IO.hPutStrLn IO.stderr str
     hSetSGR IO.stderr [Reset]
+
+hSetRed :: IO.Handle -> IO ()
+hSetRed hd = hSetSGR hd [SetColor Foreground Vivid Red]

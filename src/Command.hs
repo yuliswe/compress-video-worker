@@ -83,7 +83,7 @@ startTask :: FilePath -> Standard -> StateT Progresses IO ()
 startTask fp std = do
     st <- get
     if member fp st then
-        MT.lift $ errYellow ("Task " ++ fp ++ " is already running.")
+        MT.lift $ errorYellow ("Task " ++ fp ++ " is already running.")
     else do
         config <- MT.lift $ locateConfigFile std
         compressVideoBin <- MT.lift $ getEnv "bin_compress_video"
@@ -102,6 +102,7 @@ startTask fp std = do
                 , percentage = 0
                 , status = InQueue
                 , errors = ""
+                , command = args
             }
             , stdin  = pstdin
             , stdout = pstdout
@@ -109,7 +110,7 @@ startTask fp std = do
             , handle = hl
         }
         put (insert fp newProgess st)
-        MT.lift $ errYellow ("Started task: " ++ args)
+        MT.lift $ errorYellow ("Started task: " ++ args)
         return ()
 
 locateConfigFile :: Standard -> IO FilePath
@@ -134,11 +135,13 @@ shutdown = do
 
 shutdownProcesses :: Progresses -> IO ()
 shutdownProcesses ps = do
-        mapM_ shutdownProcess ps
-        errYellow "Graceful shutdown."
+    errorYellow "Shutting down all processes."
+    mapM_ shutdownProcess ps
+    errorYellow "Gracefully shut down everything."
 
 shutdownProcess :: Progress -> IO ()
 shutdownProcess p = do
-    IO.hPutStrLn (stdin p) "{\"command\": \"quit\"}"
-    errYellow ("Waiting for " ++ (P.url $ P.json p) ++ " to quit.")
+    IO.hPutStrLn (stdin p) "quit"
+    IO.hFlush (stdin p)
+    errorYellow ("Waiting for " ++ (P.url $ P.json p) ++ " to quit.")
     void $ P.waitForProcess (P.handle p)

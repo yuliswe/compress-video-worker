@@ -22,7 +22,7 @@ checkProgresses = do
     newst <- MT.lift $ mapM checkProgress st
     put newst
     MT.lift $ do
-        errYellow ("Number of tasks: " ++ show (length st))
+        errorYellow ("Number of tasks: " ++ show (length st))
         B8.putStrLn $ A.encode $ fmap json st
 
 checkProgress :: Progress -> IO Progress
@@ -92,6 +92,7 @@ data ProgressJSON = ProgressJSON {
     , percentage :: Float
     , status     :: Status
     , errors     :: String
+    , command    :: String
 } deriving (Generic, FromJSON, ToJSON, Show, Read)
 
 data Status = InQueue | InProgress | Done | Error | UserStopped deriving (Generic, Read, Show, ToJSON, FromJSON, Eq)

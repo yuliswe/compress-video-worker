@@ -28,6 +28,7 @@ library
                      , ansi-terminal
                      , unordered-containers
                      , scientific
+                     , exceptions
   default-language:    Haskell2010
 
 executable compress-video-worker
