@@ -36,10 +36,11 @@ loop = forever $ MC.handle onAnyException $ do
 onAnyException :: MC.SomeException -> StateT Progresses IO ()
 onAnyException e = do
     let maybeExit = E.fromException e :: Maybe ExitCode
-    let maybeAsync = E.fromException e :: Maybe E.AsyncException
-    let pick = (maybeExit, maybeAsync)
+    let maybeCommand = E.fromException e :: Maybe CommandException
+    let pick = (maybeExit, maybeCommand)
     case pick of
-        (Just ex, Nothing) -> MT.lift $ exitWith ex
+        (Just ex, _) -> MT.lift $ exitWith ex
+        (_, Just cmd) -> MT.lift $ errorRed $ show cmd
         _ -> do
             MT.lift $ errorRed $ show e
             shutdown

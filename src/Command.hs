@@ -109,6 +109,7 @@ startTask fp std = do
             , stderr = pstderr
             , handle = hl
         }
+        MT.lift $ IO.hSetBuffering pstdin IO.LineBuffering
         put (insert fp newProgess st)
         MT.lift $ errorYellow ("Started task: " ++ args)
         return ()
@@ -141,7 +142,9 @@ shutdownProcesses ps = do
 
 shutdownProcess :: Progress -> IO ()
 shutdownProcess p = do
-    IO.hPutStrLn (stdin p) "quit"
-    IO.hFlush (stdin p)
-    errorYellow ("Waiting for " ++ (P.url $ P.json p) ++ " to quit.")
-    void $ P.waitForProcess (P.handle p)
+    let ihd = stdin p
+    open <- IO.hIsOpen ihd
+    when (open && (P.status $ P.json p) == InProgress) $ do
+        IO.hPutStrLn ihd "quit"
+        errorYellow ("Waiting for " ++ (P.url $ P.json p) ++ " to quit.")
+        void $ P.waitForProcess (P.handle p)
