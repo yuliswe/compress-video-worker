@@ -87,9 +87,8 @@ startTask fp std = do
     else do
         config <- MT.lift $ locateConfigFile std
         compressVideoBin <- MT.lift $ getEnv "bin_compress_video"
-        let ext = takeExtensions fp
-        let outUrl = replaceExtensions fp (show std ++ ext)
-        let args = unwords [compressVideoBin, fp, outUrl, config]
+        let outdir = takeDirectory fp
+        let args = unwords [compressVideoBin, fp, outdir, config]
         (Just pstdin, Just pstdout, Just pstderr, hl) <- MT.lift $
             P.createProcess (P.shell args) {
                   P.std_in  = P.CreatePipe
