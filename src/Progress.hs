@@ -35,12 +35,13 @@ checkProgress p
             Just ExitSuccess -> do
                 return $ p { json = j { percentage = 100, status = Done } }
             Just (ExitFailure k) -> do
-                return $ p { json = j { status = Progress.Error, errors = "Exited with code " ++ show k ++ ".\n" ++ (errors j) } }
+                err <- IO.hGetContents (stderr p)
+                return $ p { json = j { status = Progress.Error, errors = "Exited with code " ++ show k ++ ".\n" ++ err } }
             Nothing -> do
                 str <- hGetLastLine (stdout p)
-                errs <- hGetLinesReverse (stderr p)
+                -- errs <- hGetLinesReverse (stderr p)
                 -- update errors
-                let j' = j { status = Progress.InProgress, errors = errs ++ (errors j) }
+                let j' = j { status = Progress.InProgress }
                 -- update percentage
                 let hm = A.eitherDecode (B8.pack str) :: Either String (HashMap String Float)
                 let j'' = if str == "" then j' else

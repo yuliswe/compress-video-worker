@@ -136,15 +136,19 @@ shutdown = do
 
 shutdownProcesses :: Progresses -> IO ()
 shutdownProcesses ps = do
-    errorYellow "Shutting down all processes."
+    errorYellow $ "Shutting down all " ++ (show $ length ps) ++ " processes."
     mapM_ shutdownProcess ps
     errorYellow "Gracefully shut down everything."
 
 shutdownProcess :: Progress -> IO ()
 shutdownProcess p = do
     let ihd = stdin p
-    open <- IO.hIsOpen ihd
-    when (open && (P.status $ P.json p) == InProgress) $ do
+    -- open <- IO.hIsOpen ihd
+    let js = P.json p
+    let st = P.status js
+    if st == InProgress then do
         IO.hPutStrLn ihd "quit"
-        errorYellow ("Waiting for " ++ (P.url $ P.json p) ++ " to quit.")
-        void $ P.waitForProcess (P.handle p)
+        errorYellow $ "Waiting for " ++ P.url js ++ " to quit."
+        void $ P.waitForProcess $ P.handle p
+    else do
+        errorYellow $ "Skip " ++ P.url js ++ " (" ++ show st ++ ")."
