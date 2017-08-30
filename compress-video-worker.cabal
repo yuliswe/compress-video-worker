@@ -27,8 +27,8 @@ library
                      , filepath
                      , ansi-terminal
                      , unordered-containers
-                     , scientific
                      , exceptions
+                     , utf8-string
   default-language:    Haskell2010
 
 executable compress-video-worker

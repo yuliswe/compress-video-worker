@@ -1,21 +1,25 @@
 module MainLoop where
 import           Command
-import           Progress
+import           Control.Concurrent
+import qualified Control.Exception         as E
+import           Control.Monad
+import qualified Control.Monad.Catch       as MC
+import qualified Control.Monad.Trans.Class as MT
 import           Control.Monad.Trans.State
-import qualified Control.Monad.Trans.Class  as MT
-import Control.Concurrent
-import Control.Monad
-import Data.HashMap.Lazy as HM
-import System.IO as IO
-import qualified Control.Monad.Catch as MC
-import qualified Control.Exception as E
-import Debug
-import System.Exit
+import           Data.HashMap.Lazy         as HM
+import           Debug
+import           Progress
+import           System.Exit
+import           System.IO                 as IO
 
 mainLoop :: IO ()
 mainLoop = do
+    IO.hSetBuffering IO.stdin IO.LineBuffering
     IO.hSetBuffering IO.stdout IO.LineBuffering
     IO.hSetBuffering IO.stderr IO.LineBuffering
+    IO.hSetEncoding IO.stdin IO.utf8
+    IO.hSetEncoding IO.stdout IO.utf8
+    IO.hSetEncoding IO.stderr IO.utf8
     evalStateT loop HM.empty
 
 loop :: StateT Progresses IO ()

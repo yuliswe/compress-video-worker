@@ -1,7 +1,7 @@
 module Debug where
 
 import           System.Console.ANSI
-import qualified System.IO as IO
+import qualified System.IO           as IO
 
 errorYellow :: String -> IO ()
 errorYellow str = do
@@ -15,5 +15,5 @@ errorRed str = do
     IO.hPutStrLn IO.stderr str
     hSetSGR IO.stderr [Reset]
 
-hSetRed :: IO.Handle -> IO ()
-hSetRed hd = hSetSGR hd [SetColor Foreground Vivid Red]
+-- hSetRed :: IO.Handle -> IO ()
+-- hSetRed hd = hSetSGR hd [SetColor Foreground Vivid Red]

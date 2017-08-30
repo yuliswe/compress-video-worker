@@ -4,6 +4,8 @@
 
 module Progress where
 
+import           Control.Concurrent
+import qualified Control.Exception          as E
 import qualified Control.Monad.Trans.Class  as MT
 import           Control.Monad.Trans.State
 import           Data.Aeson                 as A hiding (json)
@@ -16,6 +18,9 @@ import           System.Exit
 import qualified System.IO                  as IO
 import           System.Process
 
+type Standard = String
+type ProcessID = (FilePath, Standard)
+
 checkProgresses :: StateT Progresses IO ()
 checkProgresses = do
     st <- get
@@ -23,7 +28,7 @@ checkProgresses = do
     put newst
     MT.lift $ do
         errorYellow ("Number of tasks: " ++ show (length st))
-        B8.putStrLn $ A.encode $ fmap json st
+        B8.putStrLn $ A.encode $ fmap json $ elems st
 
 checkProgress :: Progress -> IO Progress
 checkProgress p
@@ -35,8 +40,11 @@ checkProgress p
             Just ExitSuccess -> do
                 return $ p { json = j { percentage = 100, status = Done } }
             Just (ExitFailure k) -> do
-                err <- IO.hGetContents (stderr p)
-                return $ p { json = j { status = Progress.Error, errors = "Exited with code " ++ show k ++ ".\n" ++ err } }
+                -- err <- IO.hGetContents (stderr p)
+                -- errs <- hGetLinesReverse (stderr p)
+                -- let e = reverse $ "Exited with code " ++ show k ++ ".\n" ++ errs ++ errors j
+                -- errorRed err
+                return $ p { json = j { status = Progress.Error } }
             Nothing -> do
                 str <- hGetLastLine (stdout p)
                 -- errs <- hGetLinesReverse (stderr p)
@@ -78,12 +86,12 @@ hGetLinesReverse = hGetLinesReverse' ""
             else return sofar
 
 
-type Progresses = HashMap FilePath Progress
+type Progresses = HashMap (FilePath, Standard) Progress
 
 data Progress = Progress {
       stdin  :: Handle
     , stdout :: Handle
-    , stderr :: Handle
+    -- , stderr :: Handle
     , handle :: ProcessHandle
     , json   :: ProgressJSON
 }
@@ -92,7 +100,8 @@ data ProgressJSON = ProgressJSON {
       url        :: FilePath
     , percentage :: Float
     , status     :: Status
-    , errors     :: String
+    , standard   :: Standard
+    -- , errors     :: String
     , command    :: String
 } deriving (Generic, FromJSON, ToJSON, Show, Read)
 
