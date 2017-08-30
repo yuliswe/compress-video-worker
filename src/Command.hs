@@ -78,14 +78,20 @@ runCommand (StartTask fp std) = startTask fp std
 runCommand (StopTask fp std)  = stopTask fp std
 runCommand Quit               = shutdown
 
--- queueTask :: FilePath -> Standard -> StateT Progresses IO ()
--- queueTask fp std = do
---     st <- get
---     let newProgress = Progress {
---         json = {
-
---         }
---     }
+queueTask :: FilePath -> Standard -> StateT Progresses IO ()
+queueTask fp std = do
+    st <- get
+    let newProgress = Progress {
+        json = ProgressJSON {
+              url = fp
+            , standard = std
+            , command = ""
+            , status = InQueue
+            , percentage = 0
+        },
+        handles = Nothing
+    }
+    put (HM.insert (fp, std) st)
 
 stopTask :: FilePath -> Standard -> StateT Progresses IO ()
 stopTask fp std = do
