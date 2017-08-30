@@ -33,7 +33,7 @@ checkProgresses = do
 
 checkProgress :: Progress -> IO Progress
 checkProgress pr
-    | (status (json pr) == Progress.Error) = return pr
+    | (status (json pr) /= Progress.InProgress) = return pr
     | otherwise = do
         let (Just phs) = handles pr
         code <- getProcessExitCode $ processHandle phs

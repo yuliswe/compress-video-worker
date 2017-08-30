@@ -30,10 +30,14 @@ import qualified System.Process             as P
 data CommandException = NoSuchCommand {
       given  :: String
     , reason :: String
-} | NoSuchFile {
-      command :: String
-    , url     :: FilePath
-} deriving (Show)
+} | NoSuchTask {
+      command  :: String
+    , url      :: FilePath
+    , standard :: Standard
+} | TaskAlreadyExists {
+      url      :: FilePath
+    , standard :: Standard
+}deriving (Show)
 
 instance Exception CommandException
 
@@ -50,6 +54,10 @@ data Command =
             , standard :: Standard
         }
     |   QueueTask {
+              url      :: FilePath
+            , standard :: Standard
+        }
+    |   RemoveTask {
               url      :: FilePath
             , standard :: Standard
         }
@@ -74,24 +82,38 @@ runCommands :: Commands -> StateT Progresses IO ()
 runCommands = mapM_ runCommand
 
 runCommand :: Command -> StateT Progresses IO ()
-runCommand (StartTask fp std) = startTask fp std
-runCommand (StopTask fp std)  = stopTask fp std
-runCommand Quit               = shutdown
+runCommand (StartTask fp std)  = startTask fp std
+runCommand (StopTask fp std)   = stopTask fp std
+runCommand (QueueTask fp std)  = queueTask fp std
+runCommand (RemoveTask fp std) = removeTask fp std
+runCommand Quit                = shutdown
 
 queueTask :: FilePath -> Standard -> StateT Progresses IO ()
 queueTask fp std = do
     st <- get
-    let newProgress = Progress {
-        json = ProgressJSON {
-              url = fp
-            , standard = std
-            , command = ""
-            , status = InQueue
-            , percentage = 0
-        },
-        handles = Nothing
-    }
-    put (HM.insert (fp, std) st)
+    case HM.lookup (fp, std) st of
+        Just p -> throw $ TaskAlreadyExists fp std
+        Nothing -> do
+            let newProgress = Progress {
+                json = ProgressJSON {
+                    url = fp
+                    , standard = std
+                    , command = ""
+                    , status = InQueue
+                    , percentage = 0
+                },
+                handles = Nothing
+            }
+            put (HM.insert (fp, std) newProgress st)
+
+removeTask :: FilePath -> Standard -> StateT Progresses IO ()
+removeTask fp std = do
+    st <- get
+    case HM.lookup (fp, std) st of
+        Just p -> do
+            MT.lift $ shutdownProcess p
+            put $ HM.delete (fp, std) st
+        Nothing -> throw $ NoSuchTask "stopTask" fp std
 
 stopTask :: FilePath -> Standard -> StateT Progresses IO ()
 stopTask fp std = do
@@ -99,51 +121,59 @@ stopTask fp std = do
     case HM.lookup (fp, std) st of
         Just p -> do
             MT.lift $ shutdownProcess p
-            put $ HM.delete (fp, std) st
-        Nothing -> throw $ NoSuchFile "stopTask" fp
+            let newProgress = p {
+                P.json = (P.json p) {
+                    status = UserStopped
+                }
+            }
+            put $ HM.insert (fp, std) newProgress st
+        Nothing -> throw $ NoSuchTask "stopTask" fp std
 
 startTask :: FilePath -> Standard -> StateT Progresses IO ()
 startTask fp std = do
     st <- get
-    if member (fp, std) st then
-        MT.lift $ errorYellow ("Task " ++ fp ++ " " ++ std ++ " is already running.")
-    else do
-        config <- MT.lift $ locateConfigFile std
-        compressVideoBin <- MT.lift $ getEnv "bin_compress_video"
-        let outdir = takeDirectory fp
-        (Just pstdin, Just pstdout, _, hl) <- MT.lift $
-            P.createProcess (P.proc compressVideoBin [fp, outdir, config]) {
-                  P.std_in  = P.CreatePipe
-                , P.std_out = P.CreatePipe
-                , P.std_err = P.Inherit
-            }
-        let newProgess = Progress {
-            json = ProgressJSON {
-                  url = fp
-                , percentage = 0
-                , status = InQueue
-                , standard = std
-                -- , errors = ""
-                , command = unwords [compressVideoBin, fp, outdir, config]
-            },
-
-            handles = Just ProgressHandles {
-                  stdin  = pstdin
-                , stdout = pstdout
-                -- , stderr = pstderr
-                , processHandle = hl
-            }
-
-        }
-        MT.lift $ do
-            IO.hSetBuffering pstdin IO.LineBuffering
-            IO.hSetBuffering pstdout IO.LineBuffering
-            IO.hSetEncoding pstdin IO.utf8
-            IO.hSetEncoding pstdout IO.utf8
-            -- IO.hSetEncoding pstderr IO.utf8
-        put (insert (fp, std) newProgess st)
-        MT.lift $ errorYellow ("Started task: " ++ P.showCommandForUser compressVideoBin [fp, outdir, config, "+RTS", "-xc"])
-        return ()
+    case HM.lookup (fp, std) st of
+        Nothing -> do
+            queueTask fp std
+            startTask fp std
+        Just p -> do
+            if (P.status $ P.json p) == InProgress then
+                throw $ TaskAlreadyExists fp std
+            else do
+                config <- MT.lift $ locateConfigFile std
+                compressVideoBin <- MT.lift $ getEnv "bin_compress_video"
+                let outdir = takeDirectory fp
+                (Just pstdin, Just pstdout, _, hl) <- MT.lift $
+                    P.createProcess (P.proc compressVideoBin [fp, outdir, config]) {
+                        P.std_in  = P.CreatePipe
+                        , P.std_out = P.CreatePipe
+                        , P.std_err = P.Inherit
+                    }
+                let newProgess = Progress {
+                    json = ProgressJSON {
+                        url = fp
+                        , percentage = 0
+                        , status = InProgress
+                        , standard = std
+                        -- , errors = ""
+                        , command = unwords [compressVideoBin, fp, outdir, config]
+                    },
+                    handles = Just ProgressHandles {
+                        stdin  = pstdin
+                        , stdout = pstdout
+                        -- , stderr = pstderr
+                        , processHandle = hl
+                    }
+                }
+                MT.lift $ do
+                    IO.hSetBuffering pstdin IO.LineBuffering
+                    IO.hSetBuffering pstdout IO.LineBuffering
+                    IO.hSetEncoding pstdin IO.utf8
+                    IO.hSetEncoding pstdout IO.utf8
+                    -- IO.hSetEncoding pstderr IO.utf8
+                put (insert (fp, std) newProgess st)
+                MT.lift $ errorYellow ("Started task: " ++ P.showCommandForUser compressVideoBin [fp, outdir, config, "+RTS", "-xc"])
+                return ()
 
 locateConfigFile :: Standard -> IO FilePath
 locateConfigFile std = getEnv ("cfg_" ++ std)
@@ -154,6 +184,8 @@ parseCommands contents = [ convertToCmd (BU.toString contents) $ eitherDecode co
         convertToCmd :: String -> Either String Input -> Command
         convertToCmd _ (Right (Input "startTask" [fp, std])) = StartTask fp std
         convertToCmd _ (Right (Input "stopTask" [fp, std])) = StopTask fp std
+        convertToCmd _ (Right (Input "queueTask" [fp, std])) = QueueTask fp std
+        convertToCmd _ (Right (Input "removeTask" [fp, std])) = RemoveTask fp std
         convertToCmd _ (Right (Input "quit" [])) = Quit
         convertToCmd cmd (Left err) = throw $ NoSuchCommand cmd err
         convertToCmd cmd _ = throw $ NoSuchCommand cmd "invalid arguments"
