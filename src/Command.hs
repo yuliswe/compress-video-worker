@@ -61,6 +61,7 @@ data Command =
               url      :: FilePath
             , standard :: Standard
         }
+    |   StopAllTasks
     |   Quit
     deriving (Show)
 
@@ -86,6 +87,7 @@ runCommand (StartTask fp std)  = startTask fp std
 runCommand (StopTask fp std)   = stopTask fp std
 runCommand (QueueTask fp std)  = queueTask fp std
 runCommand (RemoveTask fp std) = removeTask fp std
+runCommand StopAllTasks        = stopAllTasks
 runCommand Quit                = shutdown
 
 queueTask :: FilePath -> Standard -> StateT Progresses IO ()
@@ -128,6 +130,9 @@ stopTask fp std = do
             }
             put $ HM.insert (fp, std) newProgress st
         Nothing -> throw $ NoSuchTask "stopTask" fp std
+
+stopAllTasks :: StateT Progresses IO ()
+stopAllTasks = get >>= (mapM_ (uncurry stopTask) . HM.keys)
 
 startTask :: FilePath -> Standard -> StateT Progresses IO ()
 startTask fp std = do
@@ -186,6 +191,7 @@ parseCommands contents = [ convertToCmd (BU.toString contents) $ eitherDecode co
         convertToCmd _ (Right (Input "stopTask" [fp, std])) = StopTask fp std
         convertToCmd _ (Right (Input "queueTask" [fp, std])) = QueueTask fp std
         convertToCmd _ (Right (Input "removeTask" [fp, std])) = RemoveTask fp std
+        convertToCmd _ (Right (Input "stopAllTasks" [])) = StopAllTasks
         convertToCmd _ (Right (Input "quit" [])) = Quit
         convertToCmd cmd (Left err) = throw $ NoSuchCommand cmd err
         convertToCmd cmd _ = throw $ NoSuchCommand cmd "invalid arguments"
