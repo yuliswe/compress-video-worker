@@ -119,11 +119,15 @@ startTask fp std = do
                 , standard = std
                 -- , errors = ""
                 , command = unwords [compressVideoBin, fp, outdir, config]
+            },
+
+            handles = Just ProgressHandles {
+                  stdin  = pstdin
+                , stdout = pstdout
+                -- , stderr = pstderr
+                , processHandle = hl
             }
-            , stdin  = pstdin
-            , stdout = pstdout
-            -- , stderr = pstderr
-            , handle = hl
+
         }
         MT.lift $ do
             IO.hSetBuffering pstdin IO.LineBuffering
@@ -162,14 +166,15 @@ shutdownProcesses ps = do
     errorYellow "Gracefully shut down everything."
 
 shutdownProcess :: Progress -> IO ()
-shutdownProcess p = do
-    let ihd = stdin p
+shutdownProcess pr = do
     -- open <- IO.hIsOpen ihd
-    let js = P.json p
+    let js = P.json pr
     let st = P.status js
     if st == InProgress then do
+        let (Just phs) = P.handles pr
+        let ihd = stdin phs
         IO.hPutStrLn ihd "quit"
         errorYellow $ "Waiting for " ++ P.url js ++ " to quit."
-        void $ P.waitForProcess $ P.handle p
+        void $ P.waitForProcess $ P.processHandle phs
     else do
         errorYellow $ "Skip " ++ P.url js ++ " (" ++ show st ++ ")."
