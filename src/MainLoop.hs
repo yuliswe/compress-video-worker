@@ -27,7 +27,7 @@ loop = forever $ MC.handle onAnyException $ do
     checkCommands
     -- check input command
     checkProgresses
-    MT.lift $ threadDelay (1 * 1000000)
+    MT.lift $ threadDelay (1000000 `div` 100)
     -- print output
 
 -- onRequredExit :: ExitCode -> StateT Progresses IO ()

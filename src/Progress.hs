@@ -27,9 +27,7 @@ checkProgresses = do
     st <- get
     newst <- MT.lift $ mapM checkProgress st
     put newst
-    MT.lift $ do
-        errorYellow ("Number of tasks: " ++ show (length st))
-        B8.putStrLn $ A.encode $ fmap json $ elems st
+    MT.lift $ B8.putStrLn $ A.encode $ fmap json $ elems st
 
 checkProgress :: Progress -> IO Progress
 checkProgress pr
