@@ -27,7 +27,6 @@ checkProgresses = do
     st <- get
     newst <- MT.lift $ mapM checkProgress st
     put newst
-    MT.lift $ B8.putStrLn $ A.encode $ fmap json $ elems st
 
 checkProgress :: Progress -> IO Progress
 checkProgress pr
@@ -109,4 +108,4 @@ data ProgressJSON = ProgressJSON {
     , command    :: String
 } deriving (Generic, FromJSON, ToJSON, Show, Read)
 
-data Status = InQueue | InProgress | Done | Error | UserStopped deriving (Generic, Read, Show, ToJSON, FromJSON, Eq)
+data Status = Queued | InProgress | Done | Error | UserStopped | Added deriving (Generic, Read, Show, ToJSON, FromJSON, Eq)

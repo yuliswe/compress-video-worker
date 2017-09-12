@@ -53,6 +53,10 @@ data Command =
               url      :: FilePath
             , standard :: Standard
         }
+    |   AddTask {
+              url      :: FilePath
+            , standard :: Standard
+        }
     |   QueueTask {
               url      :: FilePath
             , standard :: Standard
@@ -62,6 +66,9 @@ data Command =
             , standard :: Standard
         }
     |   StopAllTasks
+    |   QueueAddedTasks
+    |   StartQueuedTasks
+    |   Report
     |   Quit
     deriving (Show)
 
@@ -86,9 +93,16 @@ runCommand :: Command -> StateT Progresses IO ()
 runCommand (StartTask fp std)  = startTask fp std
 runCommand (StopTask fp std)   = stopTask fp std
 runCommand (QueueTask fp std)  = queueTask fp std
+runCommand (AddTask fp std)    = addTask fp std
 runCommand (RemoveTask fp std) = removeTask fp std
 runCommand StopAllTasks        = stopAllTasks
+runCommand QueueAddedTasks     = queueAddedTasks
+runCommand StartQueuedTasks    = startQueuedTasks
+runCommand Report              = report
 runCommand Quit                = shutdown
+
+report :: StateT Progresses IO ()
+report = get >>= MT.lift . B8.putStrLn . A.encode . fmap P.json . elems
 
 queueTask :: FilePath -> Standard -> StateT Progresses IO ()
 queueTask fp std = do
@@ -101,7 +115,25 @@ queueTask fp std = do
                     url = fp
                     , standard = std
                     , command = ""
-                    , status = InQueue
+                    , status = Queued
+                    , percentage = 0
+                },
+                handles = Nothing
+            }
+            put (HM.insert (fp, std) newProgress st)
+
+addTask :: FilePath -> Standard -> StateT Progresses IO ()
+addTask fp std = do
+    st <- get
+    case HM.lookup (fp, std) st of
+        Just p -> throw $ TaskAlreadyExists fp std
+        Nothing -> do
+            let newProgress = Progress {
+                json = ProgressJSON {
+                    url = fp
+                    , standard = std
+                    , command = ""
+                    , status = Added
                     , percentage = 0
                 },
                 handles = Nothing
@@ -115,7 +147,7 @@ removeTask fp std = do
         Just p -> do
             MT.lift $ shutdownProcess p
             put $ HM.delete (fp, std) st
-        Nothing -> throw $ NoSuchTask "stopTask" fp std
+        Nothing -> throw $ NoSuchTask "removeTask" fp std
 
 stopTask :: FilePath -> Standard -> StateT Progresses IO ()
 stopTask fp std = do
@@ -133,6 +165,25 @@ stopTask fp std = do
 
 stopAllTasks :: StateT Progresses IO ()
 stopAllTasks = get >>= (mapM_ (uncurry stopTask) . HM.keys)
+
+startQueuedTasks :: StateT Progresses IO ()
+startQueuedTasks = get >>= (mapM_ (uncurry startQueuedTask) . HM.keys)
+
+startQueuedTask :: FilePath -> Standard -> StateT Progresses IO ()
+startQueuedTask fp std = do
+    st <- get
+    case HM.lookup (fp, std) st of
+        Nothing -> startTask fp std
+        Just p -> if (status $ P.json p) == Queued then startTask fp std
+                  else return ()
+
+queueAddedTasks :: StateT Progresses IO ()
+queueAddedTasks = get >>= put . HM.map queueAddedTask
+
+queueAddedTask :: Progress -> Progress
+queueAddedTask p
+    | ((status $ P.json p) == Added) = p { P.json = (P.json p) { status = Queued } }
+    | otherwise = p
 
 startTask :: FilePath -> Standard -> StateT Progresses IO ()
 startTask fp std = do
@@ -188,10 +239,14 @@ parseCommands contents = [ convertToCmd (BU.toString contents) $ eitherDecode co
     where
         convertToCmd :: String -> Either String Input -> Command
         convertToCmd _ (Right (Input "startTask" [fp, std])) = StartTask fp std
+        convertToCmd _ (Right (Input "addTask" [fp, std])) = AddTask fp std
         convertToCmd _ (Right (Input "stopTask" [fp, std])) = StopTask fp std
         convertToCmd _ (Right (Input "queueTask" [fp, std])) = QueueTask fp std
         convertToCmd _ (Right (Input "removeTask" [fp, std])) = RemoveTask fp std
         convertToCmd _ (Right (Input "stopAllTasks" [])) = StopAllTasks
+        convertToCmd _ (Right (Input "startQueuedTasks" [])) = StartQueuedTasks
+        convertToCmd _ (Right (Input "queueAddedTasks" [])) = QueueAddedTasks
+        convertToCmd _ (Right (Input "report" [])) = Report
         convertToCmd _ (Right (Input "quit" [])) = Quit
         convertToCmd cmd (Left err) = throw $ NoSuchCommand cmd err
         convertToCmd cmd _ = throw $ NoSuchCommand cmd "invalid arguments"
