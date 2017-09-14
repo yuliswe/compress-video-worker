@@ -65,9 +65,9 @@ data Command =
               url      :: FilePath
             , standard :: Standard
         }
-    |   StopAllTasks
+    |   StopInProgressTasks
     |   QueueAddedTasks
-    |   StartQueuedTasks
+    |   StartQueuedOrUserStoppedTasks
     |   Report
     |   Quit
     deriving (Show)
@@ -90,16 +90,16 @@ runCommands :: Commands -> StateT Progresses IO ()
 runCommands = mapM_ runCommand
 
 runCommand :: Command -> StateT Progresses IO ()
-runCommand (StartTask fp std)  = startTask fp std
-runCommand (StopTask fp std)   = stopTask fp std
-runCommand (QueueTask fp std)  = queueTask fp std
-runCommand (AddTask fp std)    = addTask fp std
-runCommand (RemoveTask fp std) = removeTask fp std
-runCommand StopAllTasks        = stopAllTasks
-runCommand QueueAddedTasks     = queueAddedTasks
-runCommand StartQueuedTasks    = startQueuedTasks
-runCommand Report              = report
-runCommand Quit                = shutdown
+runCommand (StartTask fp std)            = startTask fp std
+runCommand (StopTask fp std)             = stopTask fp std
+runCommand (QueueTask fp std)            = queueTask fp std
+runCommand (AddTask fp std)              = addTask fp std
+runCommand (RemoveTask fp std)           = removeTask fp std
+runCommand StopInProgressTasks           = stopInProgressTasks
+runCommand QueueAddedTasks               = queueAddedTasks
+runCommand StartQueuedOrUserStoppedTasks = startQueuedOrUserStoppedTasks
+runCommand Report                        = report
+runCommand Quit                          = shutdown
 
 report :: StateT Progresses IO ()
 report = get >>= MT.lift . B8.putStrLn . A.encode . fmap P.json . elems
@@ -163,18 +163,29 @@ stopTask fp std = do
             put $ HM.insert (fp, std) newProgress st
         Nothing -> throw $ NoSuchTask "stopTask" fp std
 
-stopAllTasks :: StateT Progresses IO ()
-stopAllTasks = get >>= (mapM_ (uncurry stopTask) . HM.keys)
+stopInProgressTasks :: StateT Progresses IO ()
+stopInProgressTasks = do
+    st <- get
+    MT.lift $ shutdownProcesses st
+    put $ HM.map maybeChangeToUserStopped st
+    where
+        maybeChangeToUserStopped p
+            | (status $ P.json p) == InProgress = p {
+                    P.json = (P.json p) {
+                        status = UserStopped
+                    }
+                }
+            | otherwise = p
 
-startQueuedTasks :: StateT Progresses IO ()
-startQueuedTasks = get >>= (mapM_ (uncurry startQueuedTask) . HM.keys)
+startQueuedOrUserStoppedTasks :: StateT Progresses IO ()
+startQueuedOrUserStoppedTasks = get >>= (mapM_ (uncurry startQueuedOrUserStoppedTask) . HM.keys)
 
-startQueuedTask :: FilePath -> Standard -> StateT Progresses IO ()
-startQueuedTask fp std = do
+startQueuedOrUserStoppedTask :: FilePath -> Standard -> StateT Progresses IO ()
+startQueuedOrUserStoppedTask fp std = do
     st <- get
     case HM.lookup (fp, std) st of
         Nothing -> startTask fp std
-        Just p -> if (status $ P.json p) == Queued then startTask fp std
+        Just p -> if (status $ P.json p) `elem` [Queued, UserStopped] then startTask fp std
                   else return ()
 
 queueAddedTasks :: StateT Progresses IO ()
@@ -243,8 +254,8 @@ parseCommands contents = [ convertToCmd (BU.toString contents) $ eitherDecode co
         convertToCmd _ (Right (Input "stopTask" [fp, std])) = StopTask fp std
         convertToCmd _ (Right (Input "queueTask" [fp, std])) = QueueTask fp std
         convertToCmd _ (Right (Input "removeTask" [fp, std])) = RemoveTask fp std
-        convertToCmd _ (Right (Input "stopAllTasks" [])) = StopAllTasks
-        convertToCmd _ (Right (Input "startQueuedTasks" [])) = StartQueuedTasks
+        convertToCmd _ (Right (Input "stopInProgressTasks" [])) = StopInProgressTasks
+        convertToCmd _ (Right (Input "startQueuedOrUserStoppedTasks" [])) = StartQueuedOrUserStoppedTasks
         convertToCmd _ (Right (Input "queueAddedTasks" [])) = QueueAddedTasks
         convertToCmd _ (Right (Input "report" [])) = Report
         convertToCmd _ (Right (Input "quit" [])) = Quit
@@ -262,6 +273,7 @@ shutdownProcesses :: Progresses -> IO ()
 shutdownProcesses ps = do
     errorYellow $ "Shutting down all " ++ (show $ length ps) ++ " processes."
     mapM_ shutdownProcess ps
+    waitForProcesses ps
     errorYellow "Gracefully shut down everything."
 
 shutdownProcess :: Progress -> IO ()
@@ -273,7 +285,15 @@ shutdownProcess pr = do
         let (Just phs) = P.handles pr
         let ihd = stdin phs
         IO.hPutStrLn ihd "quit"
-        errorYellow $ "Waiting for " ++ P.url js ++ " to quit."
-        void $ P.waitForProcess $ P.processHandle phs
+        errorYellow $ "Ask " ++ P.url js ++ " to quit."
+        -- void $ P.waitForProcess $ P.processHandle phs
     else do
         errorYellow $ "Skip " ++ P.url js ++ " (" ++ show st ++ ")."
+
+waitForProcesses :: Progresses -> IO ()
+waitForProcesses ps = mapM_ maybeWait ps
+    where
+        maybeWait p =
+            case handles p of
+                Nothing -> return ()
+                Just hs -> void $ P.waitForProcess $ P.processHandle hs
