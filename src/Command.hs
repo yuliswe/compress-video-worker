@@ -208,7 +208,7 @@ startTask fp std = do
                 throw $ TaskAlreadyExists fp std
             else do
                 config <- MT.lift $ locateConfigFile std
-                compressVideoBin <- MT.lift $ getEnv "bin_compress_video"
+                let compressVideoBin = "compress-video"
                 let outdir = takeDirectory fp
                 (Just pstdin, Just pstdout, _, hl) <- MT.lift $
                     P.createProcess (P.proc compressVideoBin [fp, outdir, config]) {
@@ -243,7 +243,7 @@ startTask fp std = do
                 return ()
 
 locateConfigFile :: Standard -> IO FilePath
-locateConfigFile std = getEnv ("cfg_" ++ std)
+locateConfigFile std = return std
 
 parseCommands :: B8.ByteString -> Commands
 parseCommands contents = [ convertToCmd (BU.toString contents) $ eitherDecode contents ]
