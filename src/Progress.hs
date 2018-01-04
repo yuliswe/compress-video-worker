@@ -106,6 +106,7 @@ data ProgressJSON = ProgressJSON {
     , standard   :: Standard
     -- , errors     :: String
     , command    :: String
+    , size       :: Integer
 } deriving (Generic, FromJSON, ToJSON, Show, Read)
 
 data Status = Queued | InProgress | Done | Error | UserStopped | Added deriving (Generic, Read, Show, ToJSON, FromJSON, Eq)

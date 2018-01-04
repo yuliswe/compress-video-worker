@@ -117,6 +117,7 @@ queueTask fp std = do
                     , command = ""
                     , status = Queued
                     , percentage = 0
+                    , size = 0
                 },
                 handles = Nothing
             }
@@ -135,6 +136,7 @@ addTask fp std = do
                     , command = ""
                     , status = Added
                     , percentage = 0
+                    , size = 0
                 },
                 handles = Nothing
             }
@@ -196,6 +198,16 @@ queueAddedTask p
     | ((status $ P.json p) == Added) = p { P.json = (P.json p) { status = Queued } }
     | otherwise = p
 
+bin :: String -> IO String
+bin s = do
+    path <- getEnv "compress_video_bin"
+    return (path </> s)
+    
+cfg :: String -> IO String
+cfg s = do
+    path <- getEnv "compress_video_cfg"
+    return (path </> s)
+
 startTask :: FilePath -> Standard -> StateT Progresses IO ()
 startTask fp std = do
     st <- get
@@ -208,7 +220,7 @@ startTask fp std = do
                 throw $ TaskAlreadyExists fp std
             else do
                 config <- MT.lift $ locateConfigFile std
-                let compressVideoBin = "compress-video"
+                compressVideoBin <- MT.lift $ bin "compress-video"
                 let outdir = takeDirectory fp
                 (Just pstdin, Just pstdout, _, hl) <- MT.lift $
                     P.createProcess (P.proc compressVideoBin [fp, outdir, config]) {
@@ -223,6 +235,7 @@ startTask fp std = do
                         , status = InProgress
                         , standard = std
                         -- , errors = ""
+                        , size = 0
                         , command = unwords [compressVideoBin, fp, outdir, config]
                     },
                     handles = Just ProgressHandles {
@@ -243,7 +256,7 @@ startTask fp std = do
                 return ()
 
 locateConfigFile :: Standard -> IO FilePath
-locateConfigFile std = return std
+locateConfigFile std = cfg std
 
 parseCommands :: B8.ByteString -> Commands
 parseCommands contents = [ convertToCmd (BU.toString contents) $ eitherDecode contents ]
