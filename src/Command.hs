@@ -110,6 +110,7 @@ queueTask fp std = do
     case HM.lookup (fp, std) st of
         Just p -> throw $ TaskAlreadyExists fp std
         Nothing -> do
+            fsize <- MT.lift $ readFileSize fp
             let newProgress = Progress {
                 json = ProgressJSON {
                     url = fp
@@ -117,7 +118,7 @@ queueTask fp std = do
                     , command = ""
                     , status = Queued
                     , percentage = 0
-                    , size = 0
+                    , size = fsize
                 },
                 handles = Nothing
             }
@@ -129,6 +130,7 @@ addTask fp std = do
     case HM.lookup (fp, std) st of
         Just p -> throw $ TaskAlreadyExists fp std
         Nothing -> do
+            fsize <- MT.lift $ readFileSize fp
             let newProgress = Progress {
                 json = ProgressJSON {
                     url = fp
@@ -136,7 +138,7 @@ addTask fp std = do
                     , command = ""
                     , status = Added
                     , percentage = 0
-                    , size = 0
+                    , size = fsize
                 },
                 handles = Nothing
             }
@@ -221,6 +223,7 @@ startTask fp std = do
             else do
                 config <- MT.lift $ locateConfigFile std
                 compressVideoBin <- MT.lift $ bin "compress-video"
+                fsize <- MT.lift $ readFileSize fp
                 let outdir = takeDirectory fp
                 (Just pstdin, Just pstdout, _, hl) <- MT.lift $
                     P.createProcess (P.proc compressVideoBin [fp, outdir, config]) {
@@ -235,7 +238,7 @@ startTask fp std = do
                         , status = InProgress
                         , standard = std
                         -- , errors = ""
-                        , size = 0
+                        , size = fsize
                         , command = unwords [compressVideoBin, fp, outdir, config]
                     },
                     handles = Just ProgressHandles {
@@ -310,3 +313,6 @@ waitForProcesses ps = mapM_ maybeWait ps
             case handles p of
                 Nothing -> return ()
                 Just hs -> void $ P.waitForProcess $ P.processHandle hs
+
+readFileSize :: FilePath -> IO Integer
+readFileSize path = IO.withFile path IO.ReadMode IO.hFileSize                
