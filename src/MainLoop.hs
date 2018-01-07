@@ -46,5 +46,9 @@ onAnyException e = do
         (Just ex, _) -> MT.lift $ exitWith ex
         (_, Just cmd) -> MT.lift $ errorRed $ show cmd
         _ -> do
-            MT.lift $ errorRed $ show e
-            shutdown
+            ps <- get
+            MT.lift $ do
+                errorRed "An exception happened"
+                errorRed $ MC.displayException e
+                shutdownProcesses ps
+            MC.throwM e

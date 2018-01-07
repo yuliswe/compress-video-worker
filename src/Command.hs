@@ -7,6 +7,7 @@
 module Command where
 
 import           Control.Exception
+import           Control.Monad.Catch        as MC
 import           Control.Monad
 import qualified Control.Monad.Trans.Class  as MT
 import           Control.Monad.Trans.State
@@ -27,6 +28,24 @@ import           System.FilePath
 import qualified System.IO                  as IO
 import qualified System.Process             as P
 
+data TaskException = TaskException {
+      url :: FilePath 
+    , standard :: Standard 
+    , exception :: SomeException
+} deriving (Show)
+
+handleVideoError :: FilePath -> Standard -> StateT Progresses IO () -> StateT Progresses IO ()
+handleVideoError fp std = MC.handle onAnyError 
+    where
+        onAnyError :: SomeException -> StateT Progresses IO ()
+        onAnyError e = do
+            st <- get
+            case HM.lookup (fp, std) st of
+                Nothing -> MC.throwM e
+                Just pr -> put $ HM.insert (fp, std) (P.updateStatus pr P.Error) st
+
+instance Exception TaskException
+
 data CommandException = NoSuchCommand {
       given  :: String
     , reason :: String
@@ -37,7 +56,7 @@ data CommandException = NoSuchCommand {
 } | TaskAlreadyExists {
       url      :: FilePath
     , standard :: Standard
-}deriving (Show)
+} deriving (Show)
 
 instance Exception CommandException
 
@@ -105,7 +124,7 @@ report :: StateT Progresses IO ()
 report = get >>= MT.lift . B8.putStrLn . A.encode . fmap P.json . elems
 
 queueTask :: FilePath -> Standard -> StateT Progresses IO ()
-queueTask fp std = do
+queueTask fp std = handleVideoError fp std $ do
     st <- get
     case HM.lookup (fp, std) st of
         Just p -> throw $ TaskAlreadyExists fp std
@@ -125,7 +144,7 @@ queueTask fp std = do
             put (HM.insert (fp, std) newProgress st)
 
 addTask :: FilePath -> Standard -> StateT Progresses IO ()
-addTask fp std = do
+addTask fp std = handleVideoError fp std $ do
     st <- get
     case HM.lookup (fp, std) st of
         Just p -> throw $ TaskAlreadyExists fp std
@@ -145,7 +164,7 @@ addTask fp std = do
             put (HM.insert (fp, std) newProgress st)
 
 removeTask :: FilePath -> Standard -> StateT Progresses IO ()
-removeTask fp std = do
+removeTask fp std = handleVideoError fp std $ do
     st <- get
     case HM.lookup (fp, std) st of
         Just p -> do
@@ -154,7 +173,7 @@ removeTask fp std = do
         Nothing -> throw $ NoSuchTask "removeTask" fp std
 
 stopTask :: FilePath -> Standard -> StateT Progresses IO ()
-stopTask fp std = do
+stopTask fp std = handleVideoError fp std $ do
     st <- get
     case HM.lookup (fp, std) st of
         Just p -> do
@@ -185,7 +204,7 @@ startQueuedOrUserStoppedTasks :: StateT Progresses IO ()
 startQueuedOrUserStoppedTasks = get >>= (mapM_ (uncurry startQueuedOrUserStoppedTask) . HM.keys)
 
 startQueuedOrUserStoppedTask :: FilePath -> Standard -> StateT Progresses IO ()
-startQueuedOrUserStoppedTask fp std = do
+startQueuedOrUserStoppedTask fp std = handleVideoError fp std $ do
     st <- get
     case HM.lookup (fp, std) st of
         Nothing -> startTask fp std
@@ -210,8 +229,9 @@ cfg s = do
     path <- getEnv "compress_video_cfg"
     return (path </> s)
 
+
 startTask :: FilePath -> Standard -> StateT Progresses IO ()
-startTask fp std = do
+startTask fp std = handleVideoError fp std $ do
     st <- get
     case HM.lookup (fp, std) st of
         Nothing -> do
@@ -287,7 +307,7 @@ shutdown = do
 
 shutdownProcesses :: Progresses -> IO ()
 shutdownProcesses ps = do
-    errorYellow $ "Shutting down all " ++ (show $ length ps) ++ " processes."
+    errorYellow $ "Shutting down all " ++ (show $ length ps) ++ " processes.."
     mapM_ shutdownProcess ps
     waitForProcesses ps
     errorYellow "Gracefully shut down everything."

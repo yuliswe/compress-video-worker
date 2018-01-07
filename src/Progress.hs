@@ -32,19 +32,10 @@ checkProgress :: Progress -> IO Progress
 checkProgress pr
     | (status (json pr) /= Progress.InProgress) = return pr
     | otherwise = do
-        let (Just phs) = handles pr
         code <- getProcessExitCode $ processHandle phs
-        let j = json pr
         case code of
-            Just ExitSuccess -> do
-                return $ pr { json = j { percentage = 100, status = Done } }
-            Just (ExitFailure k) -> do
-                -- err <- IO.hGetContents (stderr p)
-                -- errs <- hGetLinesReverse (stderr p)
-                -- let e = reverse $ "Exited with code " ++ show k ++ ".\n" ++ errs ++ errors j
-                -- errorRed err
-                return $ pr { json = j { status = Progress.Error } }
-            Nothing -> do
+            Just code -> return $ handleExit code
+            Nothing -> E.handle onIOException $ do
                 str <- hGetLastLine (stdout phs)
                 -- errs <- hGetLinesReverse (stderr p)
                 -- update errors
@@ -56,6 +47,22 @@ checkProgress pr
                             (Left err) -> error err
                             (Right m) -> j' { percentage = m HM.! "percentage" }
                 return $ pr { json = j'' }
+    where
+        (Just phs) = handles pr
+        j = json pr
+
+        handleExit :: ExitCode -> Progress
+        handleExit ExitSuccess = pr { json = j { percentage = 100, status = Done } }
+        handleExit (ExitFailure k) = pr { json = j { status = Progress.Error } }
+
+        onIOException :: E.IOException -> IO Progress
+        onIOException e = do
+            -- check again the exit code
+            code <- getProcessExitCode $ processHandle phs
+            return $ 
+                case code of
+                    Nothing -> handleExit (ExitFailure 1)
+                    Just code -> handleExit code
 
 decodeProgress :: B8.ByteString -> ProgressJSON
 decodeProgress s =
@@ -110,3 +117,6 @@ data ProgressJSON = ProgressJSON {
 } deriving (Generic, FromJSON, ToJSON, Show, Read)
 
 data Status = Queued | InProgress | Done | Error | UserStopped | Added deriving (Generic, Read, Show, ToJSON, FromJSON, Eq)
+
+updateStatus :: Progress -> Status -> Progress
+updateStatus p s = p { json = (json p) { status = s } } 
