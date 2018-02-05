@@ -29,13 +29,13 @@ import qualified System.IO                  as IO
 import qualified System.Process             as P
 
 data TaskException = TaskException {
-      url :: FilePath 
-    , standard :: Standard 
+      url :: FilePath
+    , standard :: Standard
     , exception :: SomeException
 } deriving (Show)
 
 handleVideoError :: FilePath -> Standard -> StateT Progresses IO () -> StateT Progresses IO ()
-handleVideoError fp std = MC.handle onAnyError 
+handleVideoError fp std = MC.handle onAnyError
     where
         onAnyError :: SomeException -> StateT Progresses IO ()
         onAnyError e = do
@@ -121,7 +121,11 @@ runCommand Report                        = report
 runCommand Quit                          = shutdown
 
 report :: StateT Progresses IO ()
-report = get >>= MT.lift . B8.putStrLn . A.encode . fmap P.json . elems
+report = do
+    st <- get
+    MT.lift $ do
+        (B8.putStrLn . A.encode . fmap P.json . elems) st
+        IO.hFlush IO.stdout
 
 queueTask :: FilePath -> Standard -> StateT Progresses IO ()
 queueTask fp std = handleVideoError fp std $ do
@@ -223,7 +227,7 @@ bin :: String -> IO String
 bin s = do
     path <- getEnv "compress_video_bin"
     return (path </> s)
-    
+
 cfg :: String -> IO String
 cfg s = do
     path <- getEnv "compress_video_cfg"
@@ -335,4 +339,4 @@ waitForProcesses ps = mapM_ maybeWait ps
                 Just hs -> void $ P.waitForProcess $ P.processHandle hs
 
 readFileSize :: FilePath -> IO Integer
-readFileSize path = IO.withFile path IO.ReadMode IO.hFileSize                
+readFileSize path = IO.withFile path IO.ReadMode IO.hFileSize
